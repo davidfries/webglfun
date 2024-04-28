@@ -5,8 +5,8 @@
 import { createShaderProgram } from '@alexjwayne/ts-gl-shader'
 import { mat4, vec3 } from 'gl-matrix'
 
-// Pass a 2d coordinate straight through.
-const vertSrc = /* glsl */ `
+// Pass a 3d coordinate straight through.
+const dVertSrc = /* glsl */ `
   precision mediump float;
   
   attribute vec3 aVert;
@@ -14,80 +14,106 @@ const vertSrc = /* glsl */ `
   uniform mat4 uProjection;
   uniform mat4 uMatrix;
 
-  varying vec3 vVert;
-
   void main() {
-    vVert = aVert;
     gl_Position = uProjection * uMatrix * vec4(aVert, 1.0);
   }
 `
 
-// Mix two colors together in varying amounts over time.
-const fragSrc = /* glsl */ `
+// Create a fragment shader that colors the radar shape a blue to purple reflectivity color scale
+const dFragSrc = /* glsl */ `
   precision mediump float;
+
+  uniform vec4 colorScale[8];
+  uniform float reflectivity;
+
+
   
-  uniform vec4 uMainColor;
-  uniform vec4 uLineColor;
-
-  uniform float uLineWidth;
-
-  varying vec3 vVert;
-
-  float lines(float val) {
-    val += 0.5;
-    return step(mod(val, 1.0), uLineWidth);
-  }
-
   void main() {
-    float linesAlpha =
-      lines(vVert.x) +
-      lines(vVert.y) +
-      lines(vVert.z);
-
-    linesAlpha = clamp(linesAlpha, 0.0, 1.0);
-    gl_FragColor = mix(uMainColor, uLineColor, linesAlpha);
+    float reflectivity = 0.5;
+    float reflectivityIndex = floor(reflectivity * 8.0);
+    vec4 color = colorScale[int(reflectivityIndex)];
+    gl_FragColor = color;
   }
 `
+
+
 
 function start() {
   const canvas = setupCanvas()
   const gl = getWebGLContext(canvas)
 
-  const cubeVerts = createCube(gl)
+  // const cubeVerts = createCube(gl)
+  const radarVerts = createRadar(gl)
 
   // Create the shader program
-  const shader = createShaderProgram(gl, vertSrc, fragSrc)
+  const shader = createShaderProgram(gl, dVertSrc, dFragSrc)
+  gl.useProgram(shader)
 
-let newProjection = mat4.create()
-  let projection = mat4.perspective(newProjection,Math.PI * 0.2, canvas.clientWidth / canvas.clientHeight, 1, 2000)
-  const translateVector = vec3.fromValues(0,0,-1000)
-  newProjection = mat4.translate(newProjection,newProjection, translateVector)
+  // Get the attribute location
+  const aVert = gl.getAttribLocation(shader, 'aVert')
+  gl.enableVertexAttribArray(aVert)
+  const colorScaleFloat32Array = new Float32Array([
+    0.0, 0.0, 0.0, 1.0,
+    0.0, 0.0, 1.0, 1.0,
+    0.0, 1.0, 1.0, 1.0,
+    0.0, 1.0, 0.0, 1.0,
+    1.0, 0.0, 0.0, 1.0,
+    1.0, 0.0, 1.0, 1.0,
+    1.0, 1.0, 1.0, 1.0,
+    1.0, 1.0, 0.0, 1.0,
+  ])
+  const radarColorScale = shader.uniforms['colorScale[8]'].setArray(colorScaleFloat32Array)
 
+  // Get the uniform location
+  const uProjection = gl.getUniformLocation(shader, 'uProjection')
+  const uMatrix = gl.getUniformLocation(shader, 'uMatrix')
+  const reflectivity = gl.getUniformLocation(shader, 'reflectivity')
+
+  // Set the projection matrix
+  const projection = mat4.create()
+  mat4.perspective(projection, Math.PI / 4, canvas.width / canvas.height, 0.1, 100)
+
+  // Set the model matrix
+  const model = mat4.create()
+  mat4.translate(model, model, vec3.fromValues(0, 0, -5))
+
+  // Set the view matrix
+  const view = mat4.create()
+
+  // Set the reflectivity
+  gl.uniform1f(reflectivity, 0.5)
+
+  // Set the projection matrix
+  gl.uniformMatrix4fv(uProjection, false, projection)
+
+  // Set the model matrix
+  gl.uniformMatrix4fv(uMatrix, false, model)
+
+  // Bind the buffer
+  gl.bindBuffer(gl.ARRAY_BUFFER, radarVerts)
+  gl.vertexAttribPointer(aVert, 3, gl.FLOAT, false, 0, 0)
+
+  // Render loop
   function render() {
+    // Clear the screen
+    gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-    let time = performance.now() / 1000
+    // Rotate the model matrix
+    mat4.rotateX(model, model, Math.PI / 180)
+    mat4.rotateY(model, model, Math.PI / 180)
+    gl.uniformMatrix4fv(uMatrix, false, model)
 
-    // Put the cube at [0,0,0] and rotate it over time.
-    const vector = vec3.fromValues(0, 0, 0)
-    let cubeMatrix = mat4.fromTranslation(mat4.create(), mat4.getTranslation(vector, mat4.create()))
-    const newMatrix = mat4.fromTranslation(mat4.create(), vector)
-    cubeMatrix = mat4.rotateX(newMatrix, newMatrix,time * 0.1)
-    cubeMatrix = mat4.rotateY(newMatrix,newMatrix, time * 0.3)
-    cubeMatrix = mat4.rotateZ(newMatrix,newMatrix, -time * 0.5)
-    cubeMatrix = mat4.scale(newMatrix,newMatrix, vec3.fromValues(200, 200, 200))
+    // Draw the radar
+    gl.drawArrays(gl.TRIANGLES, 0, 36)
 
-    // Use the shader program and set its data.
-    shader.use()
-    shader.attributes.aVert.set(cubeVerts)
-    shader.uniforms.uProjection.setArray(projection)
-    shader.uniforms.uMatrix.setArray(cubeMatrix)
-    shader.uniforms.uMainColor.set(0.5, 0, 0.5, 1)
-    shader.uniforms.uLineColor.set(1, 0.5, 0, 1)
-    shader.uniforms.uLineWidth.set(0.02)
 
-    // Render
-    gl.drawArrays(gl.TRIANGLES, 0, 6 * 6)
+
+
+
+
+
+
 
     // Next frame
     requestAnimationFrame(render)
@@ -134,6 +160,47 @@ function createCube(gl: WebGL2RenderingContext): WebGLBuffer {
   )
 
   return quadBuffer
+}
+
+function createRadar(gl: WebGL2RenderingContext): WebGLBuffer {
+  const radarBuffer = gl.createBuffer()
+  if (!radarBuffer) throw new Error('gl.createBuffer() returned null')
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, radarBuffer)
+  //create buffer data for radar
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([
+      -1, -1, 1, 1, -1, 1, 1, 1, 1,
+
+      -1, -1, 1, 1, 1, 1, -1, 1, 1,
+
+      1, -1, 1, 1, -1, -1, 1, 1, -1,
+
+      1, -1, 1, 1, 1, -1, 1, 1, 1,
+
+      1, -1, -1, -1, -1, -1, -1, 1, -1,
+
+      1, -1, -1, -1, 1, -1, 1, 1, -1,
+
+      -1, -1, -1, -1, -1, 1, -1, 1, 1,
+
+      -1, -1, -1, -1, 1, 1, -1, 1, -1,
+
+      -1, 1, 1, 1, 1, 1, 1, 1, -1,
+
+      -1, 1, 1, 1, 1, -1, -1, 1, -1,
+
+      1, -1, 1, -1, -1, -1, 1, -1, -1,
+
+      1, -1, 1, -1, -1, 1, -1, -1, -1,
+    ]),
+
+    gl.STATIC_DRAW,
+  )
+
+  return radarBuffer
+
 }
 
 function setupCanvas(): HTMLCanvasElement {

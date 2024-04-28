@@ -56,25 +56,11 @@ class RadarData:
         # For example, return the image as bytes
         image_bytes = output.getvalue()
         return image_bytes
-        
-    def convert_image_to_shader(self, image):
-        # Convert image to numpy array
-        image_array = np.array(image)
-        
-        # Normalize image values to range [0, 1]
-        image_array = image_array / 255.0
-        
-        # Reshape image array to 1D
-        image_array = image_array.flatten()
-        
-        # Convert image array to shader format (e.g., GLSL)
-        shader_image = ','.join([str(value) for value in image_array])
-        
-        # Reshape image array to 3D
-        image_array = image_array.reshape((image.shape[0], image.shape[1], 3))
-        
-        return shader_image, image_array
     
+    def convert_radar_data_to_array(self, file_path):
+        radar = pyart.io.read_nexrad_archive(file_path)
+        return radar.fields['reflectivity']['data']
+        
     def display_3d_radar_data(self, file_path):
         # Display 3D radar data
         radar = pyart.io.read_nexrad_archive(file_path)
@@ -105,7 +91,7 @@ class RadarData:
 
         # Normalize to [0,1]
         norm = plt.Normalize(data.min(), data.max())
-        colors = cm.viridis(norm(data))
+        colors = cm.get_cmap('viridis')(norm(data))
         rcount, ccount, _ = colors.shape
 
         # Create the figure
@@ -130,5 +116,6 @@ if __name__ == '__main__':
     radar_data = RadarData()
     # radar_data.display_radar_data('/users/dj/radar/KFTG20230510_042019_V06')
     # shader = radar_data.convert_image_to_shader('/users/dj/radar/KFTG20230510_042019_V06')
-    radar_data.display_3d_radar_data('/users/dj/radar/KFTG20230510_042019_V06')
+    print(radar_data.convert_radar_data_to_array('/users/dj/radar/KFTG20230510_042019_V06'))
+    # radar_data.display_3d_radar_data('/users/dj/radar/KFTG20230510_042019_V06')
     
